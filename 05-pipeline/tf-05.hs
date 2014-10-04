@@ -2,13 +2,19 @@
 -- http://franklinchen.com/
 
 import qualified System.Environment as E
-import Control.Monad (liftM)
-import Data.Char (isAlpha)
-import qualified Data.List as L
-import qualified Data.Set as S
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
+import Control.Category ((>>>))
+import Control.Applicative ((<$>))
+import Control.Monad (forM_)
+import Data.Function (on)
+import qualified Data.Ord as Ord
+import qualified Data.Char as Char
+import qualified Data.List as List
+import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
+
+type Count = Int
 
 stopWordsPath :: FilePath
 stopWordsPath = "../stop_words.txt"
@@ -16,37 +22,44 @@ stopWordsPath = "../stop_words.txt"
 -- Example file had trailing comma and spaces.
 -- Note: filter and map can be fused by compiler for one pass without
 -- intermediate list.
-parseStopWords :: T.Text -> S.Set T.Text
+parseStopWords :: Text.Text -> Set.Set Text.Text
 parseStopWords =
-  S.fromList .
-  filter ((/= 0) . T.length) .
-  map T.strip .
-  T.split (== ',')
+  Text.split (== ',')
+  >>> map Text.strip
+  >>> filter (Text.length >>> (/= 0))
+  >>> Set.fromList
 
--- Note: T.words and T.map can be auto- fused.
-parseWords :: T.Text -> [T.Text]
-parseWords = T.words .
-             T.map (\c -> if isAlpha c then c else ' ')
+-- Note: Text.words and Text.map can be fused.
+parseWords :: Text.Text -> [Text.Text]
+parseWords =
+  Text.map (\c -> if Char.isAlpha c then c else ' ')
+  >>> Text.words
+  >>> filter (Text.length >>> (> 2))
 
--- Return pairs sorted by decreasing count and word.
--- Note: sortBy and map can be fused; filter and map can be fused.
-analyzeDocument :: S.Set T.Text -> T.Text -> [(Int, T.Text)]
+-- Decreasing by count but ascending by text.
+decreasingOrdering :: (Text.Text, Count) -> (Ord.Down Count, Text.Text)
+decreasingOrdering (word, count) = (Ord.Down count, word)
+
+-- Return pairs sorted by decreasingOrdering.
+-- Note: filter and map can be fused.
+analyzeDocument :: Set.Set Text.Text -> Text.Text -> [(Text.Text, Count)]
 analyzeDocument stopWordSet =
-  L.sortBy (flip compare) .
-  map (\(word, count) -> (count, word)) .
-  countWords .
-  filter (`S.notMember` stopWordSet) .
-  map T.toLower .
   parseWords
+  >>> map Text.toLower
+  >>> filter (`Set.notMember` stopWordSet)
+  >>> countWords
+  >>> List.sortBy (compare `on` decreasingOrdering)
+  >>> take 25
 
-countWords :: [T.Text] -> [(T.Text, Int)]
+countWords :: [Text.Text] -> [(Text.Text, Count)]
 countWords =
-  M.toList .
-  M.fromListWith (+) .
   map (\word -> (word, 1))
+  >>> Map.fromListWith (+)
+  >>> Map.toList
 
-printInfo :: (Int, T.Text) -> IO ()
-printInfo (count, word) = putStrLn $ T.unpack word ++ " - " ++ show count
+printInfo :: (Text.Text, Count) -> IO ()
+printInfo (word, count) =
+  putStrLn $ Text.unpack word ++ " - " ++ show count
 
 getDocumentPath :: IO FilePath
 getDocumentPath = do
@@ -57,7 +70,6 @@ getDocumentPath = do
 
 main :: IO ()
 main = do
-  stopWordSet <- liftM parseStopWords $ IO.readFile stopWordsPath
-  documentText <- getDocumentPath >>=
-                  IO.readFile
-  mapM_ printInfo $ analyzeDocument stopWordSet documentText
+  stopWordSet <- parseStopWords <$> IO.readFile stopWordsPath
+  documentText <- getDocumentPath >>= IO.readFile
+  analyzeDocument stopWordSet documentText `forM_` printInfo
