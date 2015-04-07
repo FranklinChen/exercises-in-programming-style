@@ -1,48 +1,59 @@
--- Franklin Chen
+#!/usr/bin/env runhaskell
+
+-- | Franklin Chen
 -- http://franklinchen.com/
 
 import qualified System.Environment as E
 import Control.Category ((>>>))
-import Control.Applicative ((<$>))
 import Control.Monad (forM_)
 import Data.Function (on)
 import qualified Data.Ord as Ord
 import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Set as Set
+import Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
-import qualified Data.Text.IO as IO
+import Data.Text (Text)
+import qualified Data.Text.IO as TextIO
 
 type Count = Int
 
 stopWordsPath :: FilePath
 stopWordsPath = "../stop_words.txt"
 
+-- | Parse a list of stop words into a set.
+--
 -- Example file had trailing comma and spaces.
+--
 -- Note: filter and map can be fused by compiler for one pass without
 -- intermediate list.
-parseStopWords :: Text.Text -> Set.Set Text.Text
+parseStopWords :: Text
+               -> Set Text
 parseStopWords =
   Text.split (== ',')
   >>> map Text.strip
   >>> filter (Text.length >>> (/= 0))
   >>> Set.fromList
 
+-- | Parse text into a list of words, throwing away the short ones.
+--
 -- Note: Text.words and Text.map can be fused.
-parseWords :: Text.Text -> [Text.Text]
+parseWords :: Text -> [Text]
 parseWords =
   Text.map (\c -> if Char.isAlpha c then c else ' ')
   >>> Text.words
   >>> filter (Text.length >>> (> 2))
 
+-- | Create an order for sorting.
+--
 -- Decreasing by count but ascending by text.
-decreasingOrdering :: (Text.Text, Count) -> (Ord.Down Count, Text.Text)
+decreasingOrdering :: (Text, Count) -> (Ord.Down Count, Text)
 decreasingOrdering (word, count) = (Ord.Down count, word)
 
--- Return pairs sorted by decreasingOrdering.
+-- | Return word-count pairs sorted by 'decreasingOrdering'.
 -- Note: filter and map can be fused.
-analyzeDocument :: Set.Set Text.Text -> Text.Text -> [(Text.Text, Count)]
+analyzeDocument :: Set Text -> Text -> [(Text, Count)]
 analyzeDocument stopWordSet =
   parseWords
   >>> map Text.toLower
@@ -51,13 +62,14 @@ analyzeDocument stopWordSet =
   >>> List.sortBy (compare `on` decreasingOrdering)
   >>> take 25
 
-countWords :: [Text.Text] -> [(Text.Text, Count)]
+-- | Count the occurrences of each word in a word list.
+countWords :: [Text] -> [(Text, Count)]
 countWords =
   map (\word -> (word, 1))
   >>> Map.fromListWith (+)
   >>> Map.toList
 
-printInfo :: (Text.Text, Count) -> IO ()
+printInfo :: (Text, Count) -> IO ()
 printInfo (word, count) =
   putStrLn $ Text.unpack word ++ " - " ++ show count
 
@@ -70,6 +82,6 @@ getDocumentPath = do
 
 main :: IO ()
 main = do
-  stopWordSet <- parseStopWords <$> IO.readFile stopWordsPath
-  documentText <- getDocumentPath >>= IO.readFile
+  stopWordSet <- parseStopWords <$> TextIO.readFile stopWordsPath
+  documentText <- getDocumentPath >>= TextIO.readFile
   analyzeDocument stopWordSet documentText `forM_` printInfo
